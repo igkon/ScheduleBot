@@ -1,12 +1,10 @@
 import telebot
 import requests
-import datetime
 
 from util.state import States
 from util.date_functions import parse_command_date
 
 from bot_config import config as cfg
-
 
 tb = telebot.TeleBot(cfg['token'])
 
@@ -42,12 +40,16 @@ def schedule_getting_command(message):
             # schedule endpoint example site.ru/schedule/2020-01-19
             dates = parse_command_date(tb, message)
             try:
-                if dates != None and len(dates)>0:
+                if dates != None and len(dates) > 0:
                     for date in dates:
-                        # здесь нужно знать, что прийдет в response, чтобы красиво распечатать
-                        res = requests.get(cfg['server_url']+'/schedule/'+str(date),
+                        res = requests.get(cfg['server_url'] + '/schedule/' + str(date),
                                            auth=(users_login[message.chat.id], users_password[message.chat.id]))
-                        print(res)
+                        if not res.json():
+                            tb.send_message(message.chat.id, 'На дату ' + date.strftime('%d.%m.%Y') + ' нет задач')
+                        else:
+                            tb.send_message(message.chat.id, 'Расписание на ' + date.strftime('%d.%m.%Y'))
+                            for i, subj in enumerate(res.json()):
+                                tb.send_message(message.chat.id, str(i+1) + '. ' + subj['subject']['title'])
             except ValueError:
                 tb.send_message(message.chat.id, 'Потеряно соединение с сервером. Попробуйте снова')
 
@@ -60,15 +62,27 @@ def tasks_getting_command(message):
         if users_current_state[message.chat.id] == States.PASSWORD_ENTERING:
             tb.send_message(message.chat.id, 'Команда не может быть паролем. Попробуйте снова')
         if users_current_state[message.chat.id] == States.AUTHORIZED:
-            # tasks endpoint example site.ru/tasks/2020-01-19
+            # tasks endpoint example site.ru/tasks
             dates = parse_command_date(tb, message)
             try:
-                if dates != None and len(dates)>0:
-                    for date in dates:
-                        # здесь нужно знать, что прийдет в response, чтобы красиво распечатать
-                        res = requests.get(cfg['server_url']+'/tasks/'+str(date),
-                                           auth=(users_login[message.chat.id], users_password[message.chat.id]))
-                        print(res)
+                if dates != None and len(dates) > 0:
+                    res = requests.get(cfg['server_url'] + '/tasks', auth=(users_login[message.chat.id],
+                                                                           users_password[message.chat.id]))
+                    if not res.json():
+                        tb.send_message(message.chat.id, 'У вас нет проставленных задач')
+                    else:
+                        tasks_for_dates = list()
+                        for date in dates:
+                            for task in res.json():
+                                if task['due_date'] == str(date):
+                                    tasks_for_dates.append(task)
+                        if len(tasks_for_dates) == 0:
+                            tb.send_message(message.chat.id, 'Нет задач на указанную(ые) дату(ы)')
+                        else:
+                            sorted_tasks = sorted(tasks_for_dates, key=lambda k: k['due_date'])
+                            for i, task in enumerate(sorted_tasks):
+                                tb.send_message(message.chat.id, str(i+1) + '. ' + task['title'] + ' ' +
+                                                task['due_date'])
             except ValueError:
                 tb.send_message(message.chat.id, 'Потеряно соединение с сервером. Попробуйте снова')
 
@@ -94,10 +108,9 @@ def authorization_finite_automate(message):
         elif users_current_state[message.chat.id] == States.PASSWORD_ENTERING:
             users_password[message.chat.id] = message.text
             try:
-                response = requests.get(cfg['server_url']+'/users', auth=(users_login[message.chat.id],
-                                                                          users_password[message.chat.id]))
-                # mock checking of authorization (я не знаю как это должно выглядеть и что будет в response)
-                if response.json().authorized:
+                response = requests.get(cfg['server_url'] + '/tasks', auth=(users_login[message.chat.id],
+                                                                            users_password[message.chat.id]))
+                if response.status_code == 200:
                     tb.send_message(message.chat.id, 'Вы успешно авторизовались')
                     tb.send_message(message.chat.id, 'Узнать список доступных команд можно при помощи /help')
                     users_current_state[message.chat.id] = States.AUTHORIZED
@@ -108,9 +121,7 @@ def authorization_finite_automate(message):
             except Exception:
                 tb.send_message(message.chat.id, 'Потеряно соединение с сервером. Попробуйте снова')
                 tb.send_message(message.chat.id, 'Введите ваш логин')
-                # users_current_state[message.chat.id] = States.LOGIN_ENTERING
-                # for debug
-                users_current_state[message.chat.id] = States.AUTHORIZED
+                users_current_state[message.chat.id] = States.LOGIN_ENTERING
         elif users_current_state[message.chat.id] == States.AUTHORIZED:
             command = message.text.split()[0]
             if command != '/schedule' and command != '/tasks' and command != '/help':
