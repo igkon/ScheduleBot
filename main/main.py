@@ -18,13 +18,17 @@ users_password = {}
 
 @tb.message_handler(commands=['start'])
 def start_message(message):
-    tb.send_message(message.chat.id, cfg['start_message'])
     if message.chat.id in users_current_state:
         if users_current_state[message.chat.id] == States.LOGIN_ENTERING:
             tb.send_message(message.chat.id, 'Команда не может быть логином. Попробуйте снова')
         if users_current_state[message.chat.id] == States.PASSWORD_ENTERING:
             tb.send_message(message.chat.id, 'Команда не может быть паролем. Попробуйте снова')
+        if users_current_state[message.chat.id] == States.AUTHORIZED:
+            tb.send_message(message.chat.id, 'Вы вышли из профиля. Авторизуйтесь снова')
+            tb.send_message(message.chat.id, 'Введите ваш логин')
+            users_current_state[message.chat.id] = States.LOGIN_ENTERING
     else:
+        tb.send_message(message.chat.id, cfg['start_message'])
         tb.send_message(message.chat.id, 'Введите ваш логин')
         users_current_state[message.chat.id] = States.LOGIN_ENTERING
 
