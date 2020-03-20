@@ -4,7 +4,7 @@ import requests
 from util.state import States
 from util.date_functions import parse_command_date
 
-from bot_config import config as cfg
+from main.bot_config import config as cfg
 
 tb = telebot.TeleBot(cfg['token'])
 
@@ -44,7 +44,7 @@ def schedule_getting_command(message):
             # schedule endpoint example site.ru/schedule/2020-01-19
             dates = parse_command_date(tb, message)
             try:
-                if dates != None and len(dates) > 0:
+                if dates is not None and len(dates) > 0:
                     for date in dates:
                         res = requests.get(cfg['server_url'] + '/schedule/' + str(date),
                                            auth=(users_login[message.chat.id], users_password[message.chat.id]))

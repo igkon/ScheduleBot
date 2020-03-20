@@ -125,6 +125,10 @@ def test_parse_command_date_without_wrong_date():
     assert captured_output.getvalue() == 'User 1 sent message: Введите дату/даты корректно. Для подробной информации используйте /help\n'
 
 
+def test_data_range_exception():
+    exc = DateRangeException()
+    assert exc.__str__() == 'DateRangeException range > 7 or < 0'
+
 
 
 
