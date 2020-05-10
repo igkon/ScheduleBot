@@ -1,10 +1,9 @@
 import pytest
-import requests_mock
 
 import io
 import sys
 
-import main.main
+import main.cmd
 from main.bot_config import config as cfg
 
 import util.mocks
@@ -12,8 +11,10 @@ import util.state as st
 import util.date_functions
 
 # Test vars
-main.main.tb = util.mocks.TelebotMock()
+main.cmd.tb = util.mocks.TelebotMock()
 user_id = 1
+login = 'alex'
+password = 'qwe1'
 
 
 @pytest.fixture(autouse=True)
@@ -21,121 +22,159 @@ def run_around_tests():
 
     yield
 
-    main.main.users_current_state.clear()
-    main.main.users_login.clear()
-    main.main.users_password.clear()
+    main.cmd.users_current_state.clear()
+    main.cmd.users_login.clear()
+    main.cmd.users_password.clear()
 
 
-def test_success_login_scenario():
+# FR_Id_28 FR_Id_29 FR_Id_30 FR_Id_32 FR_Id_33
+def test_success_login():
     captured_output = io.StringIO()
     sys.stdout = captured_output
 
     msg = util.mocks.MessageMock('/start', user_id)
 
-    main.main.start_message(msg)
-    assert main.main.users_current_state[user_id] == st.States.LOGIN_ENTERING
+    main.cmd.start_message(msg)
+    assert captured_output.getvalue().__contains__(cfg['start_message'])
+    assert main.cmd.users_current_state[user_id] == st.States.LOGIN_ENTERING
 
-    msg.text = 'login'
-    main.main.authorization_finite_automate(msg)
-    assert main.main.users_current_state[user_id] == st.States.PASSWORD_ENTERING
+    msg.text = login
+    main.cmd.authorization_finite_automate(msg)
+    assert main.cmd.users_current_state[user_id] == st.States.PASSWORD_ENTERING
 
-    msg.text = 'password'
-    with requests_mock.mock() as m:
-        m.get(cfg['server_url'] + '/tasks', text='data', status_code=200)
-        main.main.authorization_finite_automate(msg)
-    assert main.main.users_current_state[user_id] == st.States.AUTHORIZED
+    msg.text = password
+    main.cmd.authorization_finite_automate(msg)
+    assert main.cmd.users_current_state[user_id] == st.States.AUTHORIZED
+    assert captured_output.getvalue().__contains__('Вы успешно авторизовались')
+    assert captured_output.getvalue().__contains__('Узнать список доступных команд можно при помощи /help')
 
-    msg.text = '/help'
-    main.main.help_command(msg)
+
+# FR_Id_34
+def test_help_command():
+    captured_output = io.StringIO()
+    sys.stdout = captured_output
+
+    msg = util.mocks.MessageMock('/help', user_id)
+    main.cmd.users_current_state[user_id] = st.States.AUTHORIZED
+
+    main.cmd.help_command(msg)
     assert captured_output.getvalue().__contains__(cfg['help_message'])
 
-    msg.text = '/schedule 11.10.2010'
-    main.main.users_current_state[user_id] = st.States.AUTHORIZED
-    with requests_mock.mock() as m:
-        m.get(cfg['server_url'] + '/schedule/2010-10-11', json=[])
-        main.main.schedule_getting_command(msg)
-    assert captured_output.getvalue().__contains__('На дату 11.10.2010 нет задач')
 
-    msg.text ='/schedule 10.10.2010 '
-    with requests_mock.mock() as m:
-        m.get(cfg['server_url'] + '/schedule/2010-10-10', json=[{'subject':{'title': 'Programming'}},
-                                                            {'subject':{'title': 'Math'}}])
-        main.main.schedule_getting_command(msg)
-    assert captured_output.getvalue().__contains__('1. Programming')
-    assert captured_output.getvalue().__contains__('2. Math')
-    captured_output.truncate(0)
-    captured_output.seek(0)
+# FR_Id_35 FR_Id_36
+def test_schedule_command():
+    captured_output = io.StringIO()
+    sys.stdout = captured_output
 
-    msg.text = '/schedule 09.10.2010-10.10.2010'
-    with requests_mock.mock() as m:
-        m.get(cfg['server_url'] + '/schedule/2010-10-09', json=[{'subject':{'title': 'Ph. education'}},
-                                                                {'subject':{'title': 'English'}}])
-        m.get(cfg['server_url'] + '/schedule/2010-10-10', json=[{'subject':{'title': 'Programming'}},
-                                                                {'subject':{'title': 'Math'}}])
-        main.main.schedule_getting_command(msg)
-    assert captured_output.getvalue().__contains__('Расписание на 09.10.2010')
-    assert captured_output.getvalue().__contains__('1. Ph. education')
-    assert captured_output.getvalue().__contains__('2. English')
-    assert captured_output.getvalue().__contains__('Расписание на 10.10.2010')
-    assert captured_output.getvalue().__contains__('1. Programming')
-    assert captured_output.getvalue().__contains__('2. Math')
-    captured_output.truncate(0)
-    captured_output.seek(0)
+    msg = util.mocks.MessageMock('/start', user_id)
 
-    msg.text = '/tasks 10.10.2010'
-    with requests_mock.mock() as m:
-        m.get(cfg['server_url'] + '/tasks', json=[{'due_date': '2010-10-09'}, {'due_date': '2010-10-08'}])
-        main.main.tasks_getting_command(msg)
-    assert captured_output.getvalue().__contains__('Нет задач на указанную(ые) дату(ы)')
+    main.cmd.start_message(msg)
 
-    msg.text = '/tasks 08.10.2010'
-    with requests_mock.mock() as m:
-        m.get(cfg['server_url'] + '/tasks', json=[{'due_date': '2010-10-08', 'title': 'Write test'},
-                                                  {'due_date': '2010-10-08', 'title': 'Cry'},
-                                                  {'due_date': '2010-10-09', 'title': 'Do not print'}])
-        main.main.tasks_getting_command(msg)
-    assert captured_output.getvalue().__contains__('Write test')
-    assert captured_output.getvalue().__contains__('Cry')
-    assert not captured_output.getvalue().__contains__('Do not print')
-    captured_output.truncate(0)
-    captured_output.seek(0)
+    msg.text = login
+    main.cmd.authorization_finite_automate(msg)
 
-    msg.text = '/tasks 08.10.2010-09.10.2010'
-    with requests_mock.mock() as m:
-        m.get(cfg['server_url'] + '/tasks', json=[{'due_date': '2010-10-08', 'title': 'Write test'},
-                                                  {'due_date': '2010-10-08', 'title': 'Cry'},
-                                                  {'due_date': '2010-10-09', 'title': 'Do not print'}])
-        main.main.tasks_getting_command(msg)
-    assert captured_output.getvalue().__contains__('Write test')
-    assert captured_output.getvalue().__contains__('Cry')
-    assert captured_output.getvalue().__contains__('Do not print')
+    msg.text = password
+    main.cmd.authorization_finite_automate(msg)
+
+    msg.text = '/schedule 11.05.2020'
+    main.cmd.schedule_getting_command(msg)
+    assert captured_output.getvalue().__contains__('1. Math')
+
+    msg.text = '/schedule 10.05.2020'
+    main.cmd.schedule_getting_command(msg)
+    assert captured_output.getvalue().__contains__('На дату 10.05.2020 нет задач')
 
 
+# FR_Id_35 FR_Id_37
+def test_schedule_command_range():
+    captured_output = io.StringIO()
+    sys.stdout = captured_output
+
+    msg = util.mocks.MessageMock('/start', user_id)
+
+    main.cmd.start_message(msg)
+
+    msg.text = login
+    main.cmd.authorization_finite_automate(msg)
+
+    msg.text = password
+    main.cmd.authorization_finite_automate(msg)
+
+    msg.text = '/schedule 11.05.2020-13.05.2020'
+    main.cmd.schedule_getting_command(msg)
+    assert captured_output.getvalue().__contains__('Расписание на 11.05.2020')
+    assert captured_output.getvalue().__contains__('1. Math')
+
+    assert captured_output.getvalue().__contains__('Расписание на 12.05.2020')
+    assert captured_output.getvalue().__contains__('1. Math')
+
+    assert captured_output.getvalue().__contains__('Расписание на 13.05.2020')
+    assert captured_output.getvalue().__contains__('1. Math')
+
+    msg.text = '/schedule 10.05.2020-11.05.2020'
+    main.cmd.schedule_getting_command(msg)
+    assert captured_output.getvalue().__contains__('На дату 10.05.2020 нет задач')
+    assert captured_output.getvalue().__contains__('Расписание на 11.05.2020')
+    assert captured_output.getvalue().__contains__('1. Math')
+
+
+# FR_Id_35 FR_Id_38
+def test_tasks_command():
+    captured_output = io.StringIO()
+    sys.stdout = captured_output
+
+    msg = util.mocks.MessageMock('/start', user_id)
+
+    main.cmd.start_message(msg)
+
+    msg.text = login
+    main.cmd.authorization_finite_automate(msg)
+
+    msg.text = password
+    main.cmd.authorization_finite_automate(msg)
+
+    msg.text = '/tasks 11.05.2020'
+    main.cmd.tasks_getting_command(msg)
+    assert captured_output.getvalue().__contains__('1. Learn theorem 2020-05-11')
+
+
+# FR_Id_35 FR_Id_39
+def test_tasks_command_range():
+    captured_output = io.StringIO()
+    sys.stdout = captured_output
+
+    msg = util.mocks.MessageMock('/start', user_id)
+
+    main.cmd.start_message(msg)
+
+    msg.text = login
+    main.cmd.authorization_finite_automate(msg)
+
+    msg.text = password
+    main.cmd.authorization_finite_automate(msg)
+
+    msg.text = '/tasks 11.05.2020-13.05.2020'
+    main.cmd.tasks_getting_command(msg)
+    assert captured_output.getvalue().__contains__('1. Learn theorem 2020-05-11')
+    assert captured_output.getvalue().__contains__('2. Draw the graph 2020-05-12')
+
+
+# FR_Id_31
 def test_failed_login():
     captured_output = io.StringIO()
     sys.stdout = captured_output
 
     msg = util.mocks.MessageMock('/start', user_id)
 
-    main.main.start_message(msg)
-    assert main.main.users_current_state[user_id] == st.States.LOGIN_ENTERING
+    main.cmd.start_message(msg)
+    assert captured_output.getvalue().__contains__(cfg['start_message'])
+    assert main.cmd.users_current_state[user_id] == st.States.LOGIN_ENTERING
 
-    msg.text = 'login'
-    main.main.authorization_finite_automate(msg)
-    assert main.main.users_current_state[user_id] == st.States.PASSWORD_ENTERING
+    msg.text = login
+    main.cmd.authorization_finite_automate(msg)
+    assert main.cmd.users_current_state[user_id] == st.States.PASSWORD_ENTERING
 
-    msg.text = 'password'
-    with requests_mock.mock() as m:
-        m.get(cfg['server_url'] + '/tasks', text='data', status_code=404)
-        main.main.authorization_finite_automate(msg)
-    assert main.main.users_current_state[user_id] == st.States.LOGIN_ENTERING
-
-    msg.text = 'login'
-    main.main.authorization_finite_automate(msg)
-    assert main.main.users_current_state[user_id] == st.States.PASSWORD_ENTERING
-
-    msg.text = 'another_password'
-    with requests_mock.mock() as m:
-        m.get(cfg['server_url'] + '/tasks', text='data', status_code=200)
-        main.main.authorization_finite_automate(msg)
-    assert main.main.users_current_state[user_id] == st.States.AUTHORIZED
+    msg.text = 'incorrect_password'
+    main.cmd.authorization_finite_automate(msg)
+    assert captured_output.getvalue().__contains__('Неверный логин или пароль. Попробуйте снова')
+    assert main.cmd.users_current_state[user_id] == st.States.LOGIN_ENTERING
